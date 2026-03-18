@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diglot Weave — Free Language Immersion Generator</title>
+<meta name="description" content="Free diglot weave language learning tool. Paste any text and get an immersive mix of your native and target language, calibrated to your level.">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --blue:#2563EB; --blue-light:#DBEAFE; --green:#1A5E3A; --green-light:#D1FAE5;
+    --coral:#E8563A; --coral-light:#FEE2E2; --purple:#7C3AED; --purple-light:#EDE9FE;
+    --orange:#D97706; --orange-light:#FEF3C7; --gold:#F59E0B; --red:#DC2626;
+    --gray-50:#F9FAFB; --gray-100:#F3F4F6; --gray-200:#E5E7EB; --gray-400:#9CA3AF;
+    --gray-600:#4B5563; --gray-800:#1F2937; --white:#FFFFFF;
+    --radius:10px; --shadow:0 1px 3px rgba(0,0,0,0.1);
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    background:var(--gray-50); color:var(--gray-800); font-size:15px;
+    line-height:1.6; padding-bottom:40px;
+  }
+  .page-header {
+    background:var(--white); border-bottom:1px solid var(--gray-200);
+    padding:16px 20px 12px; position:sticky; top:0; z-index:100;
+  }
+  .page-header h1 { font-size:20px; font-weight:700; }
+  .page-header .subtitle { font-size:13px; color:var(--gray-400); margin-top:2px; }
+  .header-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .content { padding:16px 20px; max-width:800px; margin:0 auto; }
+  .card { background:var(--white); border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; margin-bottom:12px; }
+  .card-title { font-size:12px; font-weight:600; color:var(--gray-400); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; }
+
+  /* Controls */
+  .controls-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+  @media(min-width:600px){ .controls-grid { grid-template-columns:1fr 1fr 1fr; } }
+  .control-group { display:flex; flex-direction:column; gap:4px; }
+  .control-group label { font-size:12px; font-weight:600; color:var(--gray-600); }
+  .control-group select, .control-group input {
+    padding:8px 10px; border:1.5px solid var(--gray-200); border-radius:8px;
+    font-size:14px; background:var(--white); color:var(--gray-800);
+    appearance:none; -webkit-appearance:none;
+  }
+  .control-group select:focus, .control-group input:focus { outline:none; border-color:var(--blue); }
+
+  /* Level tabs */
+  .level-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:4px; }
+  .level-tab {
+    padding:6px 14px; border-radius:99px; border:1.5px solid var(--gray-200);
+    font-size:13px; font-weight:600; cursor:pointer; background:var(--white);
+    color:var(--gray-600); transition:all .15s;
+  }
+  .level-tab:hover { border-color:var(--blue); color:var(--blue); }
+  .level-tab.active { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .level-tab.instant { position:relative; }
+  .level-tab.instant::after {
+    content:'⚡'; position:absolute; top:-6px; right:-4px; font-size:10px;
+  }
+  .level-desc { font-size:12px; color:var(--gray-600); padding:8px 12px; background:var(--gray-50); border-radius:8px; margin-top:8px; border-left:3px solid var(--blue); }
+
+  /* API key */
+  .apikey-row { display:flex; gap:8px; align-items:center; }
+  .apikey-row input { flex:1; padding:8px 10px; border:1.5px solid var(--gray-200); border-radius:8px; font-size:13px; font-family:monospace; }
+  .apikey-row input:focus { outline:none; border-color:var(--blue); }
+  .link-btn { font-size:12px; color:var(--blue); cursor:pointer; white-space:nowrap; background:none; border:none; padding:0; }
+
+  /* Textarea */
+  textarea {
+    width:100%; min-height:160px; padding:12px; border:1.5px solid var(--gray-200);
+    border-radius:var(--radius); font-size:15px; font-family:inherit;
+    resize:vertical; line-height:1.6; color:var(--gray-800);
+  }
+  textarea:focus { outline:none; border-color:var(--blue); }
+  .char-count { font-size:12px; color:var(--gray-400); text-align:right; margin-top:4px; }
+
+  /* Buttons */
+  .btn {
+    display:inline-flex; align-items:center; gap:6px; padding:10px 18px;
+    border-radius:8px; border:none; font-size:14px; font-weight:600;
+    cursor:pointer; transition:opacity .15s;
+  }
+  .btn:active { opacity:.75; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .btn-primary { background:var(--blue); color:#fff; }
+  .btn-secondary { background:var(--gray-100); color:var(--gray-800); }
+  .btn-green { background:var(--green); color:#fff; }
+  .btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+
+  /* Loading */
+  .loading-bar { height:3px; background:var(--blue-light); border-radius:99px; overflow:hidden; margin-bottom:12px; display:none; }
+  .loading-bar-inner { height:100%; width:30%; background:var(--blue); border-radius:99px; animation:slide 1.2s ease-in-out infinite; }
+  @keyframes slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(400%)} }
+
+  /* Cache badge */
+  .cache-badge {
+    display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700;
+    padding:2px 8px; border-radius:99px; background:var(--green-light); color:var(--green);
+  }
+
+  /* Output */
+  .output-text { font-size:16px; line-height:2; white-space:pre-wrap; word-break:break-word; }
+  .sw { background:#fef9c3; color:#713f12; border-radius:3px; padding:1px 3px; font-weight:600; }
+  .sw-untranslatable { background:#f3e8ff; color:#6b21a8; border-radius:3px; padding:1px 3px; font-weight:600; font-style:italic; }
+  /* Highlight off */
+  .no-highlight .sw { background:none; color:inherit; font-weight:inherit; padding:0; border-radius:0; }
+  .no-highlight .sw-untranslatable { background:none; color:inherit; font-weight:inherit; font-style:inherit; padding:0; border-radius:0; }
+
+  /* Stats */
+  .stats-bar { display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--gray-600); padding:10px 0; border-top:1px solid var(--gray-100); margin-top:8px; }
+  .stats-bar span { font-weight:700; color:var(--gray-800); }
+
+  /* Glossary tabs */
+  .glossary-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .glossary-tab {
+    padding:4px 12px; border-radius:99px; border:1.5px solid var(--gray-200);
+    font-size:12px; font-weight:700; cursor:pointer; background:var(--white);
+    color:var(--gray-600); transition:all .15s;
+  }
+  .glossary-tab:hover { border-color:var(--purple); color:var(--purple); }
+  .glossary-tab.active { background:var(--purple); color:#fff; border-color:var(--purple); }
+  .glossary-tab .tab-count {
+    display:inline-flex; align-items:center; justify-content:center;
+    background:rgba(255,255,255,0.25); border-radius:99px;
+    font-size:10px; padding:0 5px; margin-left:4px; min-width:16px;
+  }
+  .glossary-tab:not(.active) .tab-count { background:var(--gray-100); color:var(--gray-600); }
+
+  /* Glossary */
+  .glossary-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:6px; margin-top:0; }
+  .glossary-item { background:var(--gray-50); border:1px solid var(--gray-200); border-radius:6px; padding:6px 10px; font-size:13px; }
+  .glossary-item .tl { font-weight:700; color:var(--purple); }
+  .glossary-item .sl { color:var(--gray-600); font-size:12px; }
+  .glossary-item.untranslatable .tl { color:#6b21a8; font-style:italic; }
+
+  /* Audio player */
+  .audio-bar {
+    display:flex; align-items:center; gap:10px;
+    padding:10px 0; border-top:1px solid var(--gray-100); margin-top:8px;
+  }
+  .audio-btn {
+    width:36px; height:36px; border-radius:50%; border:none;
+    background:var(--blue); color:#fff; font-size:14px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    flex-shrink:0; transition:opacity .15s;
+  }
+  .audio-btn:hover { opacity:.85; }
+  .audio-btn:disabled { opacity:.4; cursor:not-allowed; }
+  .audio-progress-wrap {
+    flex:1; height:6px; background:var(--gray-200); border-radius:99px;
+    cursor:pointer; position:relative; overflow:hidden;
+  }
+  .audio-progress-fill {
+    height:100%; background:var(--blue); border-radius:99px;
+    width:0%; transition:width .2s linear; pointer-events:none;
+  }
+  .audio-time { font-size:12px; color:var(--gray-400); white-space:nowrap; min-width:32px; }
+  .audio-status { font-size:12px; color:var(--gray-400); white-space:nowrap; }
+
+  /* Error */
+  .error-box { background:var(--coral-light); border:1px solid var(--coral); border-radius:var(--radius); padding:12px 14px; font-size:14px; color:#7f1d1d; display:none; margin-bottom:12px; }
+
+  /* Output header row */
+  .output-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <div class="header-row">
+    <div>
+      <h1>🌐 Diglot Weave</h1>
+      <div class="subtitle">Free language immersion text generator</div>
+    </div>
+  </div>
+</header>
+
+<!-- Donation note -->
+<div style="background:#fffbeb;border-bottom:1px solid #fde68a;padding:10px 20px;font-size:13px;color:#92400e;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+  <span>🙏 This app is <strong>free to use</strong>, but Luke Hegelund (the host) pays the AI costs (~$0.01 per 1,000 words). A one-time <strong>$5 donation</strong> from each user covers it completely — only if you find it useful!</span>
+  <a href="https://venmo.com/lukehegelund" target="_blank" rel="noopener"
+     style="background:#3d95ce;color:#fff;padding:6px 14px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;white-space:nowrap;flex-shrink:0;">
+    💙 Venmo @lukehegelund
+  </a>
+</div>
+
+<main class="content">
+
+  <!-- Settings -->
+  <div class="card">
+    <div class="card-title">Languages</div>
+    <div class="controls-grid">
+      <div class="control-group">
+        <label>Source Language</label>
+        <select id="source-lang">
+          <option value="English">English</option>
+          <option value="Spanish">Spanish</option>
+          <option value="French">French</option>
+          <option value="German">German</option>
+          <option value="Italian">Italian</option>
+          <option value="Portuguese">Portuguese</option>
+          <option value="Dutch">Dutch</option>
+          <option value="Russian">Russian</option>
+          <option value="Danish">Danish</option>
+          <option value="Swedish">Swedish</option>
+          <option value="Norwegian">Norwegian</option>
+          <option value="Swahili">Swahili</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label>Target Language</label>
+        <select id="target-lang">
+          <option value="Spanish">Spanish</option>
+          <option value="French">French</option>
+          <option value="German">German</option>
+          <option value="Italian">Italian</option>
+          <option value="Portuguese">Portuguese</option>
+          <option value="Dutch">Dutch</option>
+          <option value="Russian">Russian</option>
+          <option value="Danish">Danish</option>
+          <option value="Swedish">Swedish</option>
+          <option value="Norwegian">Norwegian</option>
+          <option value="Swahili">Swahili</option>
+          <option value="Japanese">Japanese</option>
+          <option value="Chinese (Simplified)">Chinese</option>
+          <option value="Arabic">Arabic</option>
+          <option value="English">English</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label>Style</label>
+        <select id="style">
+          <option value="natural">Natural</option>
+          <option value="formal">Formal</option>
+          <option value="casual">Casual</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card-title" style="margin-top:12px;">Difficulty Level</div>
+    <div class="level-tabs">
+      <button class="level-tab" data-level="A0" onclick="selectLevel('A0')">A0</button>
+      <button class="level-tab" data-level="A1" onclick="selectLevel('A1')">A1</button>
+      <button class="level-tab" data-level="A2" onclick="selectLevel('A2')">A2</button>
+      <button class="level-tab active" data-level="B1" onclick="selectLevel('B1')">B1</button>
+      <button class="level-tab" data-level="B2" onclick="selectLevel('B2')">B2</button>
+      <button class="level-tab" data-level="full" onclick="selectLevel('full')">Full Translation</button>
+    </div>
+    <div class="level-desc" id="level-desc"></div>
+  </div>
+
+  <!-- API Key -->
+  <div class="card">
+    <div class="card-title">Your Claude API Key</div>
+    <div class="apikey-row">
+      <input type="password" id="api-key" placeholder="sk-ant-api03-..." autocomplete="off" style="flex:1;padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;font-family:monospace;">
+      <button class="link-btn" onclick="toggleKey()">Show</button>
+    </div>
+    <div style="font-size:12px;color:var(--gray-400);margin-top:6px;">
+      Need a key? Get one free at <a href="https://console.anthropic.com" target="_blank" style="color:var(--blue);">console.anthropic.com</a>. Your key is stored only in your browser and sent directly to Anthropic — never to this server.
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="card">
+    <div class="card-title">Your Text</div>
+    <textarea id="input-text" placeholder="Paste or type any text here…" oninput="updateCharCount()"></textarea>
+    <div class="char-count"><span id="char-count">0</span> characters</div>
+    <div class="btn-row" style="align-items:center;">
+      <button class="btn btn-primary" id="process-btn" onclick="processText()">✨ Generate</button>
+      <button class="btn btn-secondary" onclick="clearAll()">Clear</button>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gray-600);cursor:pointer;user-select:none;margin-left:4px;">
+        <input type="checkbox" id="cleanup-toggle" style="width:15px;height:15px;cursor:pointer;">
+        Clean up text
+      </label>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div class="error-box" id="error-box"></div>
+
+  <!-- Loading -->
+  <div class="loading-bar" id="loading-bar"><div class="loading-bar-inner"></div></div>
+
+  <!-- Output -->
+  <div class="card" id="output-card" style="display:none">
+    <div class="output-header">
+      <div class="card-title" style="margin:0">Output</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gray-600);cursor:pointer;user-select:none;">
+          <input type="checkbox" id="highlight-toggle" checked onchange="toggleHighlight()" style="width:15px;height:15px;cursor:pointer;">
+          Highlight swapped words
+        </label>
+        <div id="cache-indicator"></div>
+      </div>
+    </div>
+    <div class="output-text" id="output-text"></div>
+    <div class="stats-bar" id="stats-bar"></div>
+
+    <!-- Audio player -->
+    <div class="audio-bar" id="audio-bar">
+      <button class="audio-btn" id="audio-play-btn" onclick="toggleAudio()" title="Read aloud">▶</button>
+      <div class="audio-progress-wrap" onclick="seekAudio(event)">
+        <div class="audio-progress-fill" id="audio-progress-fill"></div>
+      </div>
+      <span class="audio-time" id="audio-time">0:00</span>
+      <span class="audio-status" id="audio-status"></span>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-green" onclick="downloadPDF()">⬇ Download PDF</button>
+      <button class="btn btn-secondary" onclick="copyText()">📋 Copy</button>
+    </div>
+  </div>
+
+  <!-- Glossary -->
+  <div class="card" id="glossary-card" style="display:none">
+    <div class="card-title">📖 Glossary</div>
+    <div class="glossary-tabs" id="glossary-tabs"></div>
+    <div class="glossary-grid" id="glossary-grid"></div>
+  </div>
+
+</main>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DW_CFG_KEY     = 'dw_config_cache';
+const LEVEL_ORDER    = ['A0','A1','A2','B1','B2','full'];
+
+const LEVEL_DESCS = {
+  A0:   'Complete beginner — source language with only the most foundational target-language words (numbers, family, colours, greetings).',
+  A1:   'Beginner — source language with common everyday nouns and basic adjectives swapped in.',
+  A2:   'Elementary — source language with A0+A1 vocabulary plus regular verbs and descriptive adjectives.',
+  B1:   'Intermediate — most vocabulary swapped; only words a B1 learner wouldn\'t know stay in source language.',
+  B2:   'Upper Intermediate — nearly everything swapped; only rare, technical, or untranslatable words stay in source language.',
+  full: 'Full Translation — entire text in target language, including closest equivalents for untranslatable words.',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+let currentLevel    = 'B1';
+let classCache      = {};   // key: cacheKey → { tokens: [...], srcLang, tgtLang }
+let lastCacheKey    = null;
+let lastInputText   = '';
+let lastPDFData     = { tokens:[], level:'', src:'', tgt:'' };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────────────────
+
+window.addEventListener('DOMContentLoaded', () => {
+  loadApiKey();
+  updateLevelDesc();
+  updateCharCount();
+
+  // Restore sessionStorage caches
+  try {
+    const sc = sessionStorage.getItem('dw_class_cache');
+    if (sc) classCache = JSON.parse(sc);
+  } catch(e) {}
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API KEY
+// ─────────────────────────────────────────────────────────────────────────────
+
+function loadApiKey() {
+  // Restore saved key from localStorage so users don't have to re-enter each time
+  const saved = localStorage.getItem('dw_public_api_key');
+  if (saved) document.getElementById('api-key').value = saved;
+}
+
+function toggleKey() {
+  const inp = document.getElementById('api-key');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  event.target.textContent = inp.type === 'password' ? 'Show' : 'Hide';
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function selectLevel(level) {
+  currentLevel = level;
+  document.querySelectorAll('.level-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.level === level);
+  });
+  updateLevelDesc();
+
+  // If we already have a cache for the current text+langs, re-render instantly
+  const cacheKey = buildCacheKey();
+  if (cacheKey && classCache[cacheKey]) {
+    renderFromCache(classCache[cacheKey], level, true);
+  }
+}
+
+function updateLevelDesc() {
+  document.getElementById('level-desc').textContent = LEVEL_DESCS[currentLevel];
+}
+
+function updateCharCount() {
+  document.getElementById('char-count').textContent =
+    document.getElementById('input-text').value.length.toLocaleString();
+}
+
+function clearAll() {
+  document.getElementById('input-text').value = '';
+  document.getElementById('char-count').textContent = '0';
+  document.getElementById('output-card').style.display = 'none';
+  document.getElementById('glossary-card').style.display = 'none';
+  document.getElementById('error-box').style.display = 'none';
+  lastCacheKey = null;
+}
+
+function showError(msg) {
+  const b = document.getElementById('error-box');
+  b.textContent = '⚠ ' + msg;
+  b.style.display = 'block';
+}
+
+function setLoading(on) {
+  document.getElementById('loading-bar').style.display = on ? 'block' : 'none';
+  const btn = document.getElementById('process-btn');
+  btn.disabled = on;
+  btn.textContent = on ? '⏳ Classifying…' : '✨ Generate';
+}
+
+function switchGlossaryTab(tab) {
+  window._dwGlossaryActive = tab;
+  document.querySelectorAll('.glossary-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === tab)
+  );
+  renderGlossaryTab(tab);
+}
+
+function renderGlossaryTab(tab) {
+  const items = window._dwGlossaryGroups?.[tab] || [];
+  document.getElementById('glossary-grid').innerHTML = items.map(g => `
+    <div class="glossary-item${g.isX ? ' untranslatable' : ''}">
+      <div class="tl">${escapeHTML(g.tl)}</div>
+      <div class="sl">${escapeHTML(g.sl)}</div>
+    </div>
+  `).join('');
+}
+
+function toggleHighlight() {
+  const on = document.getElementById('highlight-toggle').checked;
+  document.getElementById('output-text').classList.toggle('no-highlight', !on);
+}
+
+function cleanupPlain(text) {
+  return text
+    .replace(/\[\d{1,3}\]/g, '')
+    .replace(/\(\d{1,3}\)/g, '')
+    .replace(/  +/g, ' ');
+}
+
+function flashBtn(btn, text) {
+  const orig = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => btn.textContent = orig, 2000);
+}
+
+function buildCacheKey() {
+  const text = document.getElementById('input-text').value.trim();
+  const src  = document.getElementById('source-lang').value;
+  const tgt  = document.getElementById('target-lang').value;
+  if (!text) return null;
+  // Simple hash: length + first 80 chars + langs
+  const snippet = text.slice(0, 80).replace(/\s+/g,' ');
+  return `${src}_${tgt}_${text.length}_${snippet}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLASSIFICATION PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildClassificationPrompt(src, tgt, style) {
+  return `You are a language classification engine for a diglot weave language learning app.
+
+Your job is to tokenize the input text and classify every token.
+
+TOKENIZATION RULES:
+- Split the text into tokens. Each token is either:
+  a) A WORD or MULTI-WORD PHRASE (1-4 words) that carries meaning
+  b) A PUNCTUATION/WHITESPACE token (spaces, commas, periods, newlines, etc.)
+- Keep punctuation and whitespace as separate tokens so the text can be reconstructed exactly.
+- Multi-word phrases (e.g. "in spite of", "good morning", "Holy Spirit") should be grouped as single tokens when they function as a unit.
+
+FOR EACH WORD/PHRASE TOKEN, output one line in this exact format:
+TOKEN|LEVEL|TRANSLATION
+
+Where:
+- TOKEN is the exact surface form as it appears in the text (preserve capitalisation, conjugation, inflection, gender)
+- LEVEL is one of: A0, A1, A2, B1, B2, X
+  - A0 = absolute beginner knows this in ${tgt} (numbers, family words, colours, greetings, days)
+  - A1 = beginner knows this (common everyday nouns, basic adjectives)
+  - A2 = elementary knows this (most nouns, regular verbs in simple tenses, common adverbs)
+  - B1 = intermediate knows this (broader vocab, irregular verbs, abstract nouns)
+  - B2 = upper-intermediate knows this (collocations, idiomatic phrases, nuanced vocabulary)
+  - X  = untranslatable or has no clean ${tgt} equivalent (proper nouns that stay as-is are also X)
+- TRANSLATION is the best ${tgt} equivalent of this exact surface form:
+  - Match the exact inflection, conjugation, gender, and number of the source token
+  - For X-level tokens: still provide the closest possible ${tgt} translation (approximate is fine)
+  - For proper nouns (people, place names, brands): use X level and repeat the original as translation
+  - Style register: ${style}
+
+FOR PUNCTUATION/WHITESPACE TOKENS, output:
+TOKEN|P|
+
+(Just the token, pipe, P, pipe, empty — no translation needed.)
+
+CRITICAL RULES:
+- Output ONLY the token lines. No introduction, no summary, no explanation.
+- Every single character of the original text must be accounted for across all tokens.
+- The tokens must reconstruct the original text exactly when concatenated.
+- Never skip a word. Never merge a punctuation mark into a word token.
+
+Example input: "The dog ran quickly."
+Example output:
+The|A0|El
+ |P|
+dog|A0|perro
+ |P|
+ran|A1|corrió
+ |P|
+quickly|A2|rápidamente
+.|P|
+
+Now classify this ${src} text for ${tgt} learners:`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN PROCESS
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function processText() {
+  const apiKey = document.getElementById('api-key').value.trim();
+  const text   = document.getElementById('input-text').value.trim();
+  const src    = document.getElementById('source-lang').value;
+  const tgt    = document.getElementById('target-lang').value;
+  const style  = document.getElementById('style').value;
+
+  document.getElementById('error-box').style.display = 'none';
+
+  // Save key to localStorage for next visit
+  if (apiKey) localStorage.setItem('dw_public_api_key', apiKey);
+
+  if (!apiKey)                   return showError('Please enter your Claude API key above.');
+  if (!apiKey.startsWith('sk-')) return showError('That doesn\'t look like a valid Claude API key (should start with sk-ant-).');
+  if (!text)                     return showError('Please enter some text to process.');
+  if (src === tgt)               return showError('Source and target language must be different.');
+  if (text.length > 8000)        return showError('Text is too long — please keep under 8,000 characters.');
+
+  // Apply cleanup pre-processing before classification if checkbox is checked
+  const doCleanup = document.getElementById('cleanup-toggle').checked;
+  if (doCleanup) {
+    const cleaned = cleanupPlain(text)
+      .replace(/(^|\s)(\d{1,3}:\d{1,3})(\s|$)/g, '$1$3')
+      .replace(/(^|\n|\s)(\d{1,3})(\s)/g, (m, pre, num, post) =>
+        parseInt(num) <= 176 ? pre + post : m)
+      .replace(/(\n\s*){3,}/g, '\n\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n[ \t]+/g, '\n')
+      .trim();
+    // Update the textarea so the user sees what was sent
+    document.getElementById('input-text').value = cleaned;
+    updateCharCount();
+  }
+
+  // Re-read text in case cleanup modified the textarea
+  const finalText = document.getElementById('input-text').value.trim();
+
+  // Check cache first
+  const cacheKey = buildCacheKey();
+  if (classCache[cacheKey]) {
+    renderFromCache(classCache[cacheKey], currentLevel, true);
+    return;
+  }
+
+  setLoading(true);
+  document.getElementById('output-card').style.display = 'none';
+  document.getElementById('glossary-card').style.display = 'none';
+
+  const systemPrompt = buildClassificationPrompt(src, tgt, style);
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 8192,
+        system: systemPrompt,
+        messages: [{ role:'user', content: finalText }]
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message || `API error ${res.status}`);
+    }
+
+    const data    = await res.json();
+    const rawText = data.content?.[0]?.text || '';
+    if (!rawText) throw new Error('Empty response from Claude. Please try again.');
+
+    const tokens = parseClassification(rawText);
+    if (!tokens.length) throw new Error('Could not parse classification. Please try again.');
+
+    // Verify reconstruction
+    const reconstructed = tokens.map(t => t.token).join('');
+    // Allow minor whitespace differences at end
+    if (reconstructed.replace(/\s+$/,'') !== text.replace(/\s+$/,'')) {
+      console.warn('Reconstruction mismatch — proceeding anyway.');
+    }
+
+    // Store in cache
+    const cacheData = { tokens, srcLang:src, tgtLang:tgt };
+    classCache[cacheKey] = cacheData;
+    lastCacheKey = cacheKey;
+    try { sessionStorage.setItem('dw_class_cache', JSON.stringify(classCache)); } catch(e) {}
+
+    // Mark level tabs as instant
+    document.querySelectorAll('.level-tab').forEach(t => t.classList.add('instant'));
+
+    renderFromCache(cacheData, currentLevel, false);
+
+  } catch(err) {
+    showError(err.message || 'Something went wrong. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARSE CLASSIFICATION OUTPUT
+// ─────────────────────────────────────────────────────────────────────────────
+
+function parseClassification(raw) {
+  const lines  = raw.split('\n');
+  const tokens = [];
+
+  for (const line of lines) {
+    if (!line) continue;
+    const parts = line.split('|');
+    if (parts.length < 2) continue;
+
+    const token       = parts[0];          // exact surface form
+    const level       = parts[1].trim();   // A0/A1/A2/B1/B2/X/P
+    const translation = parts[2] ?? '';
+
+    if (!token) continue;
+
+    tokens.push({ token, level, translation: translation.trim() });
+  }
+
+  return tokens;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RENDERER — pure JS, zero API calls
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LEVEL_THRESHOLD = { A0:0, A1:1, A2:2, B1:3, B2:4, full:99 };
+
+function renderFromCache(cacheData, level, fromCache) {
+  const { tokens, srcLang, tgtLang } = cacheData;
+  const threshold = LEVEL_THRESHOLD[level] ?? 3;
+  const isFull    = level === 'full';
+
+  let html         = '';
+  let swappedCount = 0;
+  let wordCount    = 0;
+  const glossaryMap = new Map(); // translation → { src, level, isUntranslatable }
+
+  for (const tok of tokens) {
+    const escaped = escapeHTML(tok.token);
+
+    if (tok.level === 'P') {
+      // Punctuation / whitespace — always pass through as-is
+      html += escaped;
+      continue;
+    }
+
+    wordCount++;
+    const tokLevel   = LEVEL_THRESHOLD[tok.level] ?? 99;
+    const isX        = tok.level === 'X';
+    const shouldSwap = isFull
+      ? (tok.translation && tok.translation !== tok.token)
+      : (!isX && tokLevel <= threshold && tok.translation && tok.translation !== tok.token);
+
+    if (shouldSwap) {
+      const cls = isX ? 'sw-untranslatable' : 'sw';
+      html += `<span class="${cls}" title="${escapeHTML(tok.token)}">${escapeHTML(tok.translation)}</span>`;
+      swappedCount++;
+
+      // Glossary entry
+      const key = tok.translation.toLowerCase();
+      if (!glossaryMap.has(key)) {
+        glossaryMap.set(key, { tl: tok.translation, sl: tok.token, level: tok.level, isX });
+      }
+    } else {
+      html += escaped;
+    }
+  }
+
+  // Render output
+  document.getElementById('output-text').innerHTML = html;
+
+  // Stats
+  const pct = wordCount ? Math.round((swappedCount / wordCount) * 100) : 0;
+  document.getElementById('stats-bar').innerHTML = `
+    <div>Words: <span>${wordCount.toLocaleString()}</span></div>
+    <div>Swapped: <span>${swappedCount}</span></div>
+    <div>Swap rate: <span>${pct}%</span></div>
+    <div>Level: <span>${level}</span></div>
+    <div>${srcLang} → ${tgtLang}</div>
+  `;
+
+  // Cache badge
+  document.getElementById('cache-indicator').innerHTML = fromCache
+    ? '<span class="cache-badge">⚡ Instant — from cache</span>'
+    : '';
+
+  document.getElementById('output-card').style.display = 'block';
+
+  // Glossary — build tabbed by level
+  const allGlossaryItems = [...glossaryMap.values()].sort((a,b) =>
+    (LEVEL_THRESHOLD[a.level]??99) - (LEVEL_THRESHOLD[b.level]??99)
+  );
+
+  if (allGlossaryItems.length) {
+    // Group by level
+    const groups = {};
+    for (const g of allGlossaryItems) {
+      const lbl = g.isX ? '~' : g.level;
+      if (!groups[lbl]) groups[lbl] = [];
+      groups[lbl].push(g);
+    }
+
+    // Tab order
+    const tabOrder = ['A0','A1','A2','B1','B2','~'];
+    const presentTabs = tabOrder.filter(t => groups[t]);
+
+    // Store for tab switching
+    window._dwGlossaryGroups = groups;
+    window._dwGlossaryActive = presentTabs[0];
+
+    // Render tabs
+    const tabsEl = document.getElementById('glossary-tabs');
+    tabsEl.innerHTML = presentTabs.map(t => `
+      <button class="glossary-tab${t === presentTabs[0] ? ' active' : ''}"
+              data-tab="${t}" onclick="switchGlossaryTab('${t}')">
+        ${t === '~' ? 'Untranslatable' : t}
+        <span class="tab-count">${groups[t].length}</span>
+      </button>
+    `).join('');
+
+    // Render first tab
+    renderGlossaryTab(presentTabs[0]);
+    document.getElementById('glossary-card').style.display = 'block';
+  }
+
+  // Store for PDF + audio
+  lastPDFData = { tokens, level, src: srcLang, tgt: tgtLang };
+
+  // Reset audio player for new output
+  resetAudio();
+
+  // If we have cached audio for this exact key, show a ready indicator
+  const aKey = buildAudioCacheKey();
+  if (aKey && audioCache[aKey]) {
+    setAudioStatus('⚡ cached');
+    setTimeout(() => setAudioStatus(''), 2000);
+  }
+
+  document.getElementById('output-card').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PDF
+// ─────────────────────────────────────────────────────────────────────────────
+
+function downloadPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:'mm', format:'a4' });
+  const { tokens, level, src, tgt } = lastPDFData;
+
+  const margin = 20, pageW = 210, pageH = 297, usableW = pageW - margin * 2;
+  let y = margin;
+  const lh = 7;
+
+  function checkPage() { if (y + lh > pageH - margin) { doc.addPage(); y = margin; } }
+
+  function addLine(text, size, style, color) {
+    doc.setFontSize(size); doc.setFont('helvetica', style); doc.setTextColor(...color);
+    const lines = doc.splitTextToSize(text, usableW);
+    for (const l of lines) { checkPage(); doc.text(l, margin, y); y += lh; }
+    y += 2;
+  }
+
+  // Title
+  addLine('Diglot Weave Output', 18, 'bold', [37,99,235]);
+  addLine(`Level: ${level}  |  ${src} → ${tgt}  |  ${new Date().toLocaleDateString()}`, 10, 'normal', [107,114,128]);
+  y += 2;
+  doc.setDrawColor(229,231,235); doc.line(margin, y, pageW-margin, y); y += 6;
+
+  // Body — render swapped words in brackets
+  const threshold = LEVEL_THRESHOLD[level] ?? 3;
+  const isFull    = level === 'full';
+  let bodyText    = '';
+
+  for (const tok of tokens) {
+    if (tok.level === 'P') { bodyText += tok.token; continue; }
+    const tokLevel   = LEVEL_THRESHOLD[tok.level] ?? 99;
+    const isX        = tok.level === 'X';
+    const shouldSwap = isFull
+      ? (tok.translation && tok.translation !== tok.token)
+      : (!isX && tokLevel <= threshold && tok.translation && tok.translation !== tok.token);
+    bodyText += shouldSwap ? `[${tok.translation}]` : tok.token;
+  }
+
+  doc.setFontSize(12); doc.setFont('helvetica','normal'); doc.setTextColor(31,41,55);
+  const bodyLines = doc.splitTextToSize(bodyText, usableW);
+  for (const l of bodyLines) { checkPage(); doc.text(l, margin, y); y += lh; }
+
+  // Glossary
+  const seen = new Set();
+  const glossaryItems = [];
+  for (const tok of tokens) {
+    if (tok.level === 'P') continue;
+    const tokLevel = LEVEL_THRESHOLD[tok.level] ?? 99;
+    const isX      = tok.level === 'X';
+    const show     = isFull
+      ? (tok.translation && tok.translation !== tok.token)
+      : (!isX && tokLevel <= threshold && tok.translation && tok.translation !== tok.token);
+    if (show && !seen.has(tok.translation.toLowerCase())) {
+      seen.add(tok.translation.toLowerCase());
+      glossaryItems.push({ tl: tok.translation, sl: tok.token, level: tok.level });
+    }
+  }
+
+  if (glossaryItems.length) {
+    y += 4; checkPage();
+    doc.setDrawColor(229,231,235); doc.line(margin, y, pageW-margin, y); y += 6;
+    addLine('Glossary', 14, 'bold', [37,99,235]);
+
+    const colW = usableW / 2;
+    const half = Math.ceil(glossaryItems.length / 2);
+    const left = glossaryItems.slice(0, half), right = glossaryItems.slice(half);
+
+    doc.setFontSize(11);
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      checkPage();
+      if (left[i]) {
+        doc.setFont('helvetica','bold'); doc.setTextColor(124,58,237);
+        doc.text(left[i].tl, margin, y);
+        doc.setFont('helvetica','normal'); doc.setTextColor(75,85,99);
+        doc.text(`= ${left[i].sl}`, margin+30, y);
+      }
+      if (right[i]) {
+        doc.setFont('helvetica','bold'); doc.setTextColor(124,58,237);
+        doc.text(right[i].tl, margin+colW, y);
+        doc.setFont('helvetica','normal'); doc.setTextColor(75,85,99);
+        doc.text(`= ${right[i].sl}`, margin+colW+30, y);
+      }
+      y += 6;
+    }
+  }
+
+  // Footer
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); doc.setFontSize(9); doc.setTextColor(156,163,175);
+    doc.text(`Diglot Weave — Life OS  |  Page ${i} of ${pages}`, margin, pageH-8);
+  }
+
+  doc.save(`diglot-weave-${level}-${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COPY
+// ─────────────────────────────────────────────────────────────────────────────
+
+function copyText() {
+  const plain = document.getElementById('output-text').innerText;
+  navigator.clipboard.writeText(plain).then(() => flashBtn(event.target, '✓ Copied'));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIO — ElevenLabs multilingual_v2
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Audio state
+let audioCtx        = null;
+let audioSource     = null;
+let audioBuffer     = null;
+let audioStartTime  = 0;
+let audioPauseAt    = 0;
+let audioPlaying    = false;
+let audioRAF        = null;
+let audioCache      = {};   // key → ArrayBuffer
+let currentAudioKey = null;
+
+// ElevenLabs voice — "Sarah" (warm, clear, works across languages on free plan)
+const EL_VOICE_ID   = 'EXAVITQu4vr4xnSDxMaL';
+const EL_MODEL      = 'eleven_multilingual_v2';
+
+function buildAudioCacheKey() {
+  if (!lastPDFData.tokens.length) return null;
+  const { level, src, tgt } = lastPDFData;
+  const textSnippet = lastPDFData.tokens.slice(0,30).map(t=>t.token).join('').slice(0,60);
+  return `audio_${src}_${tgt}_${level}_${textSnippet.length}_${textSnippet.replace(/\s+/g,'_')}`;
+}
+
+function getPlainTextForAudio() {
+  // Get the rendered plain text from the output div (includes swapped words as rendered)
+  return document.getElementById('output-text').innerText || '';
+}
+
+async function toggleAudio() {
+  if (audioPlaying) {
+    pauseAudio();
+    return;
+  }
+
+  // If we have a buffer already loaded (paused state), resume
+  if (audioBuffer && audioPauseAt > 0) {
+    resumeAudio();
+    return;
+  }
+
+  // Check cache
+  const cacheKey = buildAudioCacheKey();
+  if (cacheKey && audioCache[cacheKey]) {
+    await playFromArrayBuffer(audioCache[cacheKey], cacheKey);
+    return;
+  }
+
+  // Need to generate — fetch ElevenLabs key and call API
+  await generateAudio(cacheKey);
+}
+
+async function generateAudio(cacheKey) {
+  const elevenKey = sessionStorage.getItem('dw_eleven_key') || localStorage.getItem('dw_public_eleven_key') || null;
+
+  if (!elevenKey) {
+    setAudioStatus('Audio requires a free ElevenLabs API key — add yours to localStorage as dw_public_eleven_key');
+    return;
+  }
+
+  const text = getPlainTextForAudio().trim();
+  if (!text) { setAudioStatus('No text to read'); return; }
+
+  // Truncate to 4500 chars to stay safely under ElevenLabs 5000 char limit
+  const truncated = text.length > 4500 ? text.slice(0, 4500) + '…' : text;
+
+  setAudioStatus('Generating audio…');
+  setPlayBtn('⏳', true);
+
+  try {
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${EL_VOICE_ID}`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': elevenKey,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg'
+      },
+      body: JSON.stringify({
+        text: truncated,
+        model_id: EL_MODEL,
+        voice_settings: { stability: 0.50, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true }
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.detail?.message || `ElevenLabs error ${res.status}`);
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+
+    // Cache it
+    if (cacheKey) {
+      audioCache[cacheKey] = arrayBuffer;
+      currentAudioKey = cacheKey;
+    }
+
+    setAudioStatus('');
+    await playFromArrayBuffer(arrayBuffer, cacheKey);
+
+  } catch(err) {
+    setAudioStatus('Audio error — ' + (err.message || 'try again'));
+    setPlayBtn('▶', false);
+  }
+}
+
+async function playFromArrayBuffer(buffer, cacheKey) {
+  // Always decode fresh — AudioBuffers are not reusable after a context is closed
+  if (!audioCtx || audioCtx.state === 'closed') {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+
+  try {
+    // Clone buffer since decodeAudioData is destructive in some browsers
+    const clone   = buffer.slice(0);
+    audioBuffer   = await audioCtx.decodeAudioData(clone);
+    audioPauseAt  = 0;
+    currentAudioKey = cacheKey;
+    startPlayback(0);
+  } catch(err) {
+    setAudioStatus('Playback error');
+    setPlayBtn('▶', false);
+  }
+}
+
+function startPlayback(offset) {
+  if (audioSource) { try { audioSource.stop(); } catch(e) {} }
+
+  audioSource           = audioCtx.createBufferSource();
+  audioSource.buffer    = audioBuffer;
+  audioSource.connect(audioCtx.destination);
+
+  audioSource.onended = () => {
+    if (audioPlaying) {
+      audioPlaying = false;
+      audioPauseAt = 0;
+      setPlayBtn('▶', false);
+      setAudioStatus('');
+      cancelAnimationFrame(audioRAF);
+      document.getElementById('audio-progress-fill').style.width = '0%';
+      document.getElementById('audio-time').textContent = '0:00';
+    }
+  };
+
+  audioStartTime = audioCtx.currentTime - offset;
+  audioSource.start(0, offset);
+  audioPlaying = true;
+  setPlayBtn('⏸', false);
+  setAudioStatus('');
+  updateProgressLoop();
+}
+
+function pauseAudio() {
+  if (!audioPlaying) return;
+  audioPauseAt = audioCtx.currentTime - audioStartTime;
+  try { audioSource.stop(); } catch(e) {}
+  audioPlaying = false;
+  cancelAnimationFrame(audioRAF);
+  setPlayBtn('▶', false);
+}
+
+function resumeAudio() {
+  if (!audioBuffer) return;
+  if (!audioCtx || audioCtx.state === 'closed') {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  startPlayback(audioPauseAt);
+}
+
+function seekAudio(e) {
+  if (!audioBuffer) return;
+  const wrap    = e.currentTarget;
+  const rect    = wrap.getBoundingClientRect();
+  const pct     = (e.clientX - rect.left) / rect.width;
+  const seekTo  = pct * audioBuffer.duration;
+  audioPauseAt  = seekTo;
+  if (audioPlaying) {
+    startPlayback(seekTo);
+  } else {
+    // Update progress bar visually without playing
+    const fill = document.getElementById('audio-progress-fill');
+    fill.style.width = (pct * 100) + '%';
+    document.getElementById('audio-time').textContent = formatTime(seekTo);
+  }
+}
+
+function updateProgressLoop() {
+  if (!audioPlaying || !audioBuffer) return;
+  const elapsed  = audioCtx.currentTime - audioStartTime;
+  const duration = audioBuffer.duration;
+  const pct      = Math.min(elapsed / duration, 1) * 100;
+
+  document.getElementById('audio-progress-fill').style.width = pct + '%';
+  document.getElementById('audio-time').textContent = formatTime(elapsed);
+
+  audioRAF = requestAnimationFrame(updateProgressLoop);
+}
+
+function formatTime(secs) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2,'0')}`;
+}
+
+function setPlayBtn(icon, disabled) {
+  const btn    = document.getElementById('audio-play-btn');
+  btn.textContent = icon;
+  btn.disabled    = disabled;
+}
+
+function setAudioStatus(msg) {
+  document.getElementById('audio-status').textContent = msg;
+}
+
+// Reset audio state when new output is rendered
+function resetAudio() {
+  if (audioSource) { try { audioSource.stop(); } catch(e) {} }
+  cancelAnimationFrame(audioRAF);
+  audioPlaying   = false;
+  audioBuffer    = null;
+  audioPauseAt   = 0;
+  currentAudioKey = null;
+  setPlayBtn('▶', false);
+  setAudioStatus('');
+  document.getElementById('audio-progress-fill').style.width = '0%';
+  document.getElementById('audio-time').textContent = '0:00';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function escapeHTML(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
