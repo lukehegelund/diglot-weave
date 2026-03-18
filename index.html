@@ -558,13 +558,14 @@ function flashBtn(btn, text) {
 }
 
 function buildCacheKey() {
-  const text = document.getElementById('input-text').value.trim();
-  const src  = document.getElementById('source-lang').value;
-  const tgt  = document.getElementById('target-lang').value;
+  const text  = document.getElementById('input-text').value.trim();
+  const src   = document.getElementById('source-lang').value;
+  const tgt   = document.getElementById('target-lang').value;
+  const model = selectedModel;
   if (!text) return null;
-  // Simple hash: length + first 80 chars + langs
+  // Include model so switching Haiku↔Sonnet forces a fresh classification
   const snippet = text.slice(0, 80).replace(/\s+/g,' ');
-  return `${src}_${tgt}_${text.length}_${snippet}`;
+  return `${src}_${tgt}_${model}_${text.length}_${snippet}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
