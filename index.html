@@ -250,17 +250,8 @@
     <div class="level-desc" id="level-desc"></div>
   </div>
 
-  <!-- API Key -->
-  <div class="card">
-    <div class="card-title">Your Claude API Key</div>
-    <div class="apikey-row">
-      <input type="password" id="api-key" placeholder="sk-ant-api03-..." autocomplete="off" style="flex:1;padding:8px 10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;font-family:monospace;">
-      <button class="link-btn" onclick="toggleKey()">Show</button>
-    </div>
-    <div style="font-size:12px;color:var(--gray-400);margin-top:6px;">
-      Need a key? Get one free at <a href="https://console.anthropic.com" target="_blank" style="color:var(--blue);">console.anthropic.com</a>. Your key is stored only in your browser and sent directly to Anthropic — never to this server.
-    </div>
-  </div>
+  <!-- API Key — hidden, loaded silently -->
+  <input type="hidden" id="api-key">
 
   <!-- Input -->
   <div class="card">
@@ -348,6 +339,8 @@
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+const SUPABASE_URL   = 'https://kxsuzgpnvtepsyhkezin.supabase.co';
+const DB_PROXY_URL   = `${SUPABASE_URL}/functions/v1/db-proxy`;
 const DW_CFG_KEY     = 'dw_config_cache';
 const LEVEL_ORDER    = ['A0','A1','A2','B1','B2','full'];
 
@@ -390,20 +383,39 @@ window.addEventListener('DOMContentLoaded', () => {
 // API KEY
 // ─────────────────────────────────────────────────────────────────────────────
 
-function loadApiKey() {
-  // Restore saved Claude key from localStorage
-  const saved = localStorage.getItem('dw_public_api_key');
-  if (saved) document.getElementById('api-key').value = saved;
+async function loadApiKey() {
+  // Check session cache first — avoids a round-trip on every page reload
+  const cached = sessionStorage.getItem(DW_CFG_KEY);
+  if (cached) {
+    try {
+      const keys = JSON.parse(cached);
+      if (keys.anthropic_api_key) {
+        document.getElementById('api-key').value = keys.anthropic_api_key;
+        if (keys.elevenlabs_api_key) sessionStorage.setItem('dw_eleven_key', keys.elevenlabs_api_key);
+        return;
+      }
+    } catch(e) { sessionStorage.removeItem(DW_CFG_KEY); }
+  }
 
-  // Pre-load ElevenLabs key into sessionStorage if saved
-  const eleven = localStorage.getItem('dw_public_eleven_key');
-  if (eleven) sessionStorage.setItem('dw_eleven_key', eleven);
-}
-
-function toggleKey() {
-  const inp = document.getElementById('api-key');
-  inp.type = inp.type === 'password' ? 'text' : 'password';
-  event.target.textContent = inp.type === 'password' ? 'Show' : 'Hide';
+  // Fetch from Supabase via db-proxy (same as LifeOS — key never touches the browser)
+  try {
+    const res  = await fetch(DB_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ table: 'app_secrets', op: 'select', select: 'key,value' })
+    });
+    const json = await res.json();
+    const rows = Array.isArray(json) ? json : (json?.data || []);
+    const map  = {};
+    for (const r of rows) map[r.key] = r.value;
+    if (map.anthropic_api_key) {
+      document.getElementById('api-key').value = map.anthropic_api_key;
+      sessionStorage.setItem(DW_CFG_KEY, JSON.stringify(map));
+    }
+    if (map.elevenlabs_api_key) {
+      sessionStorage.setItem('dw_eleven_key', map.elevenlabs_api_key);
+    }
+  } catch(e) { /* silent fail */ }
 }
 
 
@@ -574,11 +586,8 @@ async function processText() {
 
   document.getElementById('error-box').style.display = 'none';
 
-  // Save key to localStorage for next visit
-  if (apiKey) localStorage.setItem('dw_public_api_key', apiKey);
-
-  if (!apiKey)                   return showError('Please enter your Claude API key above.');
-  if (!apiKey.startsWith('sk-')) return showError('That doesn\'t look like a valid Claude API key (should start with sk-ant-).');
+  if (!apiKey)                   return showError('Still loading — please wait a moment and try again.');
+  if (!apiKey.startsWith('sk-')) return showError('API key looks invalid — please refresh the page and try again.');
   if (!text)                     return showError('Please enter some text to process.');
   if (src === tgt)               return showError('Source and target language must be different.');
   if (text.length > 8000)        return showError('Text is too long — please keep under 8,000 characters.');
