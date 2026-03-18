@@ -156,6 +156,7 @@
   }
   .audio-time { font-size:12px; color:var(--gray-400); white-space:nowrap; min-width:32px; }
   .audio-status { font-size:12px; color:var(--gray-400); white-space:nowrap; }
+  .audio-key-set { font-size:12px; color:var(--green); white-space:nowrap; }
 
   /* Error */
   .error-box { background:var(--coral-light); border:1px solid var(--coral); border-radius:var(--radius); padding:12px 14px; font-size:14px; color:#7f1d1d; display:none; margin-bottom:12px; }
@@ -307,6 +308,26 @@
       <span class="audio-status" id="audio-status"></span>
     </div>
 
+    <!-- ElevenLabs setup — shown only when key is missing -->
+    <div id="eleven-setup" style="display:none;margin-top:10px;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:13px;">
+      <div style="font-weight:700;color:#1e40af;margin-bottom:6px;">🎙 Set up Read Aloud (free, takes 1 minute)</div>
+      <ol style="padding-left:18px;color:#1e3a8a;line-height:1.8;margin-bottom:10px;">
+        <li>Go to <a href="https://elevenlabs.io" target="_blank" style="color:var(--blue);font-weight:600;">elevenlabs.io</a> and create a free account</li>
+        <li>Click your profile icon → <strong>Profile + API Key</strong></li>
+        <li>Copy your API key and paste it below</li>
+      </ol>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="password" id="eleven-key-input" placeholder="Paste your ElevenLabs API key here…"
+               style="flex:1;min-width:200px;padding:8px 10px;border:1.5px solid #bfdbfe;border-radius:8px;font-size:13px;font-family:monospace;background:#fff;">
+        <button onclick="saveElevenKey()" class="btn btn-primary" style="padding:8px 14px;font-size:13px;">Save & Play</button>
+        <button onclick="toggleElevenKeyVis()" style="background:none;border:none;font-size:12px;color:var(--blue);cursor:pointer;white-space:nowrap;">Show</button>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#3b82f6;">
+        🔒 <strong>Your key is stored only in your own browser</strong> (localStorage) and sent directly to ElevenLabs when you hit play. It is never shared with Luke or anyone else. You can delete it any time by clearing your browser data.
+      </div>
+      <div style="margin-top:4px;font-size:12px;color:#6b7280;">ElevenLabs free plan includes 10,000 characters/month — about 30 minutes of audio. No credit card required.</div>
+    </div>
+
     <div class="btn-row">
       <button class="btn btn-green" onclick="downloadPDF()">⬇ Download PDF</button>
       <button class="btn btn-secondary" onclick="copyText()">📋 Copy</button>
@@ -370,9 +391,13 @@ window.addEventListener('DOMContentLoaded', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function loadApiKey() {
-  // Restore saved key from localStorage so users don't have to re-enter each time
+  // Restore saved Claude key from localStorage
   const saved = localStorage.getItem('dw_public_api_key');
   if (saved) document.getElementById('api-key').value = saved;
+
+  // Pre-load ElevenLabs key into sessionStorage if saved
+  const eleven = localStorage.getItem('dw_public_eleven_key');
+  if (eleven) sessionStorage.setItem('dw_eleven_key', eleven);
 }
 
 function toggleKey() {
@@ -953,13 +978,36 @@ async function toggleAudio() {
   await generateAudio(cacheKey);
 }
 
+function saveElevenKey() {
+  const key = document.getElementById('eleven-key-input').value.trim();
+  if (!key) return;
+  localStorage.setItem('dw_public_eleven_key', key);
+  sessionStorage.setItem('dw_eleven_key', key);
+  document.getElementById('eleven-setup').style.display = 'none';
+  // Auto-trigger audio now that we have the key
+  generateAudio(buildAudioCacheKey());
+}
+
+function toggleElevenKeyVis() {
+  const inp = document.getElementById('eleven-key-input');
+  const btn = event.target;
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  btn.textContent = inp.type === 'password' ? 'Show' : 'Hide';
+}
+
 async function generateAudio(cacheKey) {
-  const elevenKey = sessionStorage.getItem('dw_eleven_key') || localStorage.getItem('dw_public_eleven_key') || null;
+  const elevenKey = sessionStorage.getItem('dw_eleven_key')
+    || localStorage.getItem('dw_public_eleven_key')
+    || null;
 
   if (!elevenKey) {
-    setAudioStatus('Audio requires a free ElevenLabs API key — add yours to localStorage as dw_public_eleven_key');
+    // Show the friendly setup panel instead of a cryptic error
+    document.getElementById('eleven-setup').style.display = 'block';
+    document.getElementById('eleven-setup').scrollIntoView({ behavior:'smooth', block:'nearest' });
     return;
   }
+  // Key exists — hide setup panel if it was open
+  document.getElementById('eleven-setup').style.display = 'none';
 
   const text = getPlainTextForAudio().trim();
   if (!text) { setAudioStatus('No text to read'); return; }
@@ -1124,7 +1172,11 @@ function resetAudio() {
   audioPauseAt   = 0;
   currentAudioKey = null;
   setPlayBtn('▶', false);
-  setAudioStatus('');
+  // Show "Audio ready" if ElevenLabs key is already saved
+  const hasKey = localStorage.getItem('dw_public_eleven_key') || sessionStorage.getItem('dw_eleven_key');
+  setAudioStatus(hasKey ? '🔊 Ready' : '▶ Press play to set up audio');
+  setTimeout(() => setAudioStatus(''), 3000);
+  document.getElementById('eleven-setup').style.display = 'none';
   document.getElementById('audio-progress-fill').style.width = '0%';
   document.getElementById('audio-time').textContent = '0:00';
 }
