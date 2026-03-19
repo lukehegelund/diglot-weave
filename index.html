@@ -528,11 +528,11 @@ function showError(msg) {
   b.style.display = 'block';
 }
 
-function setLoading(on) {
+function setLoading(on, label) {
   document.getElementById('loading-bar').style.display = on ? 'block' : 'none';
   const btn = document.getElementById('process-btn');
   btn.disabled = on;
-  btn.textContent = on ? '⏳ Classifying…' : '✨ Generate';
+  btn.textContent = on ? `⏳ ${label || 'Processing…'}` : '✨ Generate';
 }
 
 function switchGlossaryTab(tab) {
@@ -704,7 +704,7 @@ function buildCacheKey() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLASSIFICATION PROMPT
+// TWO-STEP PROMPTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildClassificationPrompt(src, tgt, style) {
@@ -846,6 +846,86 @@ Holy Spirit|A1|Espíritu Santo
 Auto-detect the source language and classify this text for ${tgt} learners:`;
 }
 
+function buildTranslationPrompt(tgt, style) {
+  return `Translate the following text into natural, fluent ${tgt}.
+
+Rules:
+- Produce a complete, idiomatic ${tgt} translation — write as a native speaker would.
+- Preserve the structure and paragraph breaks of the original.
+- Do not add commentary, notes, or explanations.
+- Style register: ${style}.
+- Output ONLY the translation. Nothing else.`;
+}
+
+function buildAlignmentPrompt(tgt) {
+  return `You are an alignment engine for a diglot weave language learning app.
+
+You will be given:
+1. SOURCE TEXT — the original text
+2. TRANSLATION — a natural ${tgt} translation of that source text
+
+Your job is to align every span of the source text to its corresponding span in the translation, and classify each aligned pair by CEFR level.
+
+OUTPUT FORMAT — one line per aligned pair:
+SOURCE_SPAN|LEVEL|TRANSLATION_SPAN
+
+Where:
+- SOURCE_SPAN = the exact source text characters (word, phrase, or punctuation/whitespace)
+- LEVEL = A0, A1, A2, B1, B2, X, or P
+  - P  = punctuation or whitespace (no translation needed)
+  - A0 = absolute beginner knows this in ${tgt} (numbers, family, colours, greetings, days)
+  - A1 = beginner knows this (common everyday nouns, basic adjectives)
+  - A2 = elementary (most nouns, regular verbs, common adverbs)
+  - B1 = intermediate (broader vocab, irregular verbs, abstract nouns)
+  - B2 = upper-intermediate (collocations, idioms, nuanced vocabulary)
+  - X  = proper noun, untranslatable, or no clean ${tgt} equivalent
+- TRANSLATION_SPAN = the corresponding span from the TRANSLATION
+  - For P tokens: leave empty
+  - For X tokens: use the closest ${tgt} equivalent even if approximate
+  - Use the exact text from the provided translation — do not re-translate
+
+ALIGNMENT RULES:
+- Every character of the source text must appear in exactly one SOURCE_SPAN.
+- Spans must be in source-text order.
+- Align at the most natural granularity:
+  • Single words whenever possible.
+  • Multi-word source spans only when they correspond to a single translation span (e.g. "por tanto" → "therefore", "afecto profundo" → "deep affection", "de la misma manera" → "in the same way").
+  • Punctuation and whitespace are their own P spans.
+- The TRANSLATION_SPANs concatenated (ignoring P spans) must reconstruct the full translation.
+
+CRITICAL:
+- Output ONLY the alignment lines. No introduction, no explanation, no summary.
+- Never skip a source character.
+
+Example:
+SOURCE: "El perro corrió rápidamente."
+TRANSLATION: "The dog ran quickly."
+
+El|A0|The
+ |P|
+perro|A0|dog
+ |P|
+corrió|A1|ran
+ |P|
+rápidamente|A2|quickly
+.|P|
+
+Example with chunk:
+SOURCE: "Tenía afecto profundo por todos."
+TRANSLATION: "He had deep affection for everyone."
+
+Tenía|A1|He had
+ |P|
+afecto profundo|B1|deep affection
+ |P|
+por|A0|for
+ |P|
+todos|A1|everyone
+.|P|
+
+Now align this source text and its ${tgt} translation:`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN PROCESS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -889,15 +969,13 @@ async function processText() {
     return;
   }
 
-  setLoading(true);
+  setLoading(true, 'Translating…');
   document.getElementById('output-card').style.display = 'none';
   document.getElementById('glossary-card').style.display = 'none';
 
-  const systemPrompt = buildClassificationPrompt(src, tgt, style);
+  const geminiModel = selectedModel === 'sonnet' ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
 
-  try {
-    // Model names: flash = gemini-2.5-flash, pro = gemini-2.5-pro
-    const geminiModel = selectedModel === 'sonnet' ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+  async function gemini(systemPrompt, userText) {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`,
       {
@@ -905,23 +983,32 @@ async function processText() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: [{ text: finalText }] }],
+          contents: [{ role: 'user', parts: [{ text: userText }] }],
           generationConfig: { maxOutputTokens: 8192, temperature: 0.1 }
         })
       }
     );
-
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error?.message || `API error ${res.status}`);
     }
+    const data = await res.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  }
 
-    const data    = await res.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!rawText) throw new Error('Empty response from Gemini. Please try again.');
+  try {
+    // ── Step 1: Natural translation ──────────────────────────────────────────
+    const translation = await gemini(buildTranslationPrompt(tgt, style), finalText);
+    if (!translation) throw new Error('Empty translation from Gemini. Please try again.');
+
+    // ── Step 2: Alignment + classification ───────────────────────────────────
+    setLoading(true, 'Aligning…');
+    const alignInput = `SOURCE TEXT:\n${finalText}\n\nTRANSLATION:\n${translation}`;
+    const rawText = await gemini(buildAlignmentPrompt(tgt), alignInput);
+    if (!rawText) throw new Error('Empty alignment from Gemini. Please try again.');
 
     const tokens = parseClassification(rawText);
-    if (!tokens.length) throw new Error('Could not parse classification. Please try again.');
+    if (!tokens.length) throw new Error('Could not parse alignment. Please try again.');
 
     // Verify reconstruction
     const reconstructed = tokens.map(t => t.token).join('');
