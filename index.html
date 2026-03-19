@@ -258,16 +258,16 @@
       <label id="model-haiku-label" class="model-option active-model" onclick="selectModel('haiku')" style="cursor:pointer;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:8px;border:2px solid var(--blue);background:#eff6ff;">
         <input type="radio" name="model-choice" id="model-haiku" value="haiku" checked style="margin-top:3px;accent-color:var(--blue);">
         <div>
-          <div style="font-weight:700;font-size:14px;color:var(--gray-800);">Haiku <span style="font-weight:400;font-size:12px;color:var(--gray-400);">— Recommended</span></div>
-          <div style="font-size:12px;color:var(--gray-600);margin-top:2px;">Good quality · ~3× faster · ~$0.01 per 1,000 words for Luke</div>
+          <div style="font-weight:700;font-size:14px;color:var(--gray-800);">Flash <span style="font-weight:400;font-size:12px;color:var(--gray-400);">— Recommended</span></div>
+          <div style="font-size:12px;color:var(--gray-600);margin-top:2px;">Good quality · ~3× faster · ~$0.003 per 1,000 words for Luke</div>
         </div>
       </label>
 
       <label id="model-sonnet-label" class="model-option" onclick="selectModel('sonnet')" style="cursor:pointer;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:8px;border:2px solid var(--gray-200);background:var(--white);">
         <input type="radio" name="model-choice" id="model-sonnet" value="sonnet" style="margin-top:3px;accent-color:var(--blue);">
         <div>
-          <div style="font-weight:700;font-size:14px;color:var(--gray-800);">Sonnet <span style="font-weight:400;font-size:12px;color:var(--gray-400);">— Higher quality</span></div>
-          <div style="font-size:12px;color:var(--gray-600);margin-top:2px;">Great quality · ~3× slower · ~$0.04 per 1,000 words for Luke · please consider donating if you use this regularly</div>
+          <div style="font-weight:700;font-size:14px;color:var(--gray-800);">Pro <span style="font-weight:400;font-size:12px;color:var(--gray-400);">— Higher quality</span></div>
+          <div style="font-size:12px;color:var(--gray-600);margin-top:2px;">Great quality · ~3× slower · ~$0.02 per 1,000 words for Luke · please consider donating if you use this regularly</div>
         </div>
       </label>
 
@@ -456,28 +456,31 @@ async function loadApiKey() {
   const savedEleven = localStorage.getItem('dw_public_eleven_key');
   if (savedEleven) sessionStorage.setItem('dw_eleven_key', savedEleven);
 
-  // Claude key — check session cache first, then fetch from Supabase
+  // Gemini key — check session cache first, then fetch from Supabase
   const cached = sessionStorage.getItem(DW_CFG_KEY);
   if (cached) {
     try {
       const keys = JSON.parse(cached);
-      if (keys.anthropic_api_key) {
-        document.getElementById('api-key').value = keys.anthropic_api_key;
+      if (keys.gemini_api_key) {
+        document.getElementById('api-key').value = keys.gemini_api_key;
         return;
       }
     } catch(e) { sessionStorage.removeItem(DW_CFG_KEY); }
   }
 
-  // Fetch Claude key from Supabase via db-proxy — key never visible in HTML
+  // Fetch Gemini key from Supabase via db-proxy — key never visible in HTML
   try {
     const res  = await proxyFetch({ table: 'app_secrets', op: 'select', select: 'key,value' });
     const json = await res.json();
     const rows = Array.isArray(json) ? json : (json?.data || []);
     const map  = {};
     for (const r of rows) map[r.key] = r.value;
-    if (map.anthropic_api_key) {
-      document.getElementById('api-key').value = map.anthropic_api_key;
+    if (map.gemini_api_key) {
+      document.getElementById('api-key').value = map.gemini_api_key;
       sessionStorage.setItem(DW_CFG_KEY, JSON.stringify(map));
+    }
+    if (map.elevenlabs_api_key) {
+      sessionStorage.setItem('dw_eleven_key', map.elevenlabs_api_key);
     }
   } catch(e) {}
 }
@@ -695,7 +698,7 @@ function buildCacheKey() {
   const tgt   = document.getElementById('target-lang').value;
   const model = selectedModel;
   if (!text) return null;
-  // Include model so switching Haiku↔Sonnet forces a fresh classification
+  // Include model so switching Flash↔Pro forces a fresh classification
   const snippet = text.slice(0, 80).replace(/\s+/g,' ');
   return `auto_${tgt}_${model}_${text.length}_${snippet}`;
 }
@@ -856,8 +859,7 @@ async function processText() {
 
   document.getElementById('error-box').style.display = 'none';
 
-  if (!apiKey)                   return showError('Still loading — please wait a moment and try again.');
-  if (!apiKey.startsWith('sk-')) return showError('API key looks invalid — please refresh the page and try again.');
+  if (!apiKey) return showError('Still loading — please wait a moment and try again.');
   if (!text)                     return showError('Please enter some text to process.');
   if (text.length > 8000)        return showError('Text is too long — please keep under 8,000 characters.');
 
@@ -894,21 +896,20 @@ async function processText() {
   const systemPrompt = buildClassificationPrompt(src, tgt, style);
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: selectedModel === 'sonnet' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001',
-        max_tokens: 8192,
-        system: systemPrompt,
-        messages: [{ role:'user', content: finalText }]
-      })
-    });
+    // Model names: flash = gemini-2.5-flash, pro = gemini-2.5-pro
+    const geminiModel = selectedModel === 'sonnet' ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: [{ text: finalText }] }],
+          generationConfig: { maxOutputTokens: 8192, temperature: 0.1 }
+        })
+      }
+    );
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -916,8 +917,8 @@ async function processText() {
     }
 
     const data    = await res.json();
-    const rawText = data.content?.[0]?.text || '';
-    if (!rawText) throw new Error('Empty response from Claude. Please try again.');
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!rawText) throw new Error('Empty response from Gemini. Please try again.');
 
     const tokens = parseClassification(rawText);
     if (!tokens.length) throw new Error('Could not parse classification. Please try again.');
